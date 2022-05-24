@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "gps2var"
+version = "0.1.0"
+description = ""
+authors = ["Ondřej Cífka <cifkao@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.6,<3.11"
+numpy = "^1.21.5"
+rasterio = {version = "^1.2.10"}
+
+[tool.poetry.dev-dependencies]
+black = "^22.1.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0", "setuptools>=59.5.0"]
+build-backend = "poetry.core.masonry.api"
