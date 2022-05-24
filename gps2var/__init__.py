@@ -162,7 +162,7 @@ class RasterioValueReader:
             or j < 0
             or j * block_w >= self.dataset.width
         ):
-            return self.nodata_block
+            return self.nodata_block.copy()
 
         i0, i1 = block_h * i, block_h * (i + 1)
         j0, j1 = block_w * j, block_w * (j + 1)
