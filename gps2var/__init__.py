@@ -64,7 +64,7 @@ class RasterioValueReader:
         """Read values from the dataset by coordinates.
 
         Note that for EPSG:4326 (default), the coordinates need to be passed as
-        x=latitude, y=longitude.
+        x=longitude, y=latitude.
 
         Args:
             x: A single coordinate or an array of coordinates of any shape.
