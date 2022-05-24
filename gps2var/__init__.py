@@ -136,15 +136,13 @@ class RasterioValueReader:
 
         # read the contents of each block, gather the desired values
         result = np.full(
-            (*self.features_shape, len(blocks_inverse)),
-            np.nan,
+            shape=(*self.features_shape, len(blocks_inverse)),
+            fill_value=np.nan,
             dtype=self.features_dtype,
         )
         final_shape = (*row_indices.shape, *self.features_shape)
-        row_indices, col_indices = (
-            row_indices.reshape(-1) % block_h,
-            col_indices.reshape(-1) % block_h,
-        )
+        row_indices = row_indices.reshape(-1) % block_h
+        col_indices = col_indices.reshape(-1) % block_h
         for idx, (i, j) in enumerate(blocks_unique):
             block = self._read_block(i, j)
             (indices,) = np.where(blocks_inverse == idx)
