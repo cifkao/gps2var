@@ -2,7 +2,7 @@
 Fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
 
 ```python
-from rasterio import DatasetReader
+import rasterio
 from gps2var import RasterioValueReader
 
 dataset = rasterio.open("wildareas-v3-2009-human-footprint.tif")
