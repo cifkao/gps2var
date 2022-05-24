@@ -112,7 +112,9 @@ class RasterioValueReader:
         # v00 * (1 - ii) * (1 - jj) + v01 * (1 - ii) * jj + v10 * ii * (1 - jj) + v11 * ii * jj
         return (interp_weights * interp_values).sum(axis=0)
 
-    def at(self, row_indices: Union[int, np.ndarray], col_indices, Union[int, np.ndarray]):
+    def at(
+        self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
+    ):
         """Read values from the dataset by row and column indices.
 
         Args:
@@ -142,7 +144,7 @@ class RasterioValueReader:
         )
         final_shape = (*row_indices.shape, *self.features_shape)
         row_indices = row_indices.reshape(-1) % block_h
-        col_indices = col_indices.reshape(-1) % block_h
+        col_indices = col_indices.reshape(-1) % block_w
         for idx, (i, j) in enumerate(blocks_unique):
             block = self._read_block(i, j)
             (indices,) = np.where(blocks_inverse == idx)
