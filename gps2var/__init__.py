@@ -112,11 +112,8 @@ class RasterioValueReader:
         # v00 * (1 - ii) * (1 - jj) + v01 * (1 - ii) * jj + v10 * ii * (1 - jj) + v11 * ii * jj
         return (interp_weights * interp_values).sum(axis=0)
 
-    def at(self, row_indices, col_indices):
+    def at(self, row_indices: Union[int, np.ndarray], col_indices, Union[int, np.ndarray]):
         """Read values from the dataset by row and column indices.
-
-        Note that for EPSG:4326 (default), the coordinates need to be passed as
-        x=latitude, y=longitude.
 
         Args:
             row_indices: A single row index or an array of row indices of any shape.
