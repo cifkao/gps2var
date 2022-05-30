@@ -1,3 +1,5 @@
+import contextlib
+import os
 from typing import Any, Optional, Tuple, Union
 
 import numpy as np
@@ -10,7 +12,7 @@ class RasterioValueReader:
     """Enables querying Rasterio dataset using coordinates.
 
     Args:
-        dataset: A Rasterio dataset.
+        dataset: A Rasterio dataset or a path to one.
         crs: The coordinate reference system. Defaults to "EPSG:4326", i.e. standard
             GPS coordinates.
         interpolation: "nearest" or "bilinear". Defaults to "nearest".
@@ -25,7 +27,7 @@ class RasterioValueReader:
 
     def __init__(
         self,
-        dataset: rasterio.DatasetReader,
+        dataset: Union[rasterio.DatasetReader, str, os.PathLike],
         crs: Any = "EPSG:4326",
         interpolation: str = "nearest",
         block_shape: Optional[Tuple[int, int]] = None,
@@ -38,32 +40,36 @@ class RasterioValueReader:
                 f"interpolation must be 'nearest' or 'bilinear', got {repr(interpolation)}"
             )
 
-        self.dataset = dataset
-        self.block_shape = block_shape or dataset.block_shapes[0]
-        self.interpolation = interpolation
-        self.dtype = dtype
-        self.fill_value = fill_value
+        with contextlib.ExitStack() as ctx:
+            if not isinstance(dataset, rasterio.DatasetReader):
+                dataset = ctx.enter_context(rasterio.open(dataset))
+            self.dataset = dataset
 
-        self.inv_dataset_transform = ~dataset.transform
-        if crs == dataset.crs:
-            self.transformer = None
-        else:
-            self.transformer = pyproj.Transformer.from_crs(
-                crs, dataset.crs, always_xy=True
+            self.block_shape = block_shape or dataset.block_shapes[0]
+            self.interpolation = interpolation
+            self.dtype = dtype
+            self.fill_value = fill_value
+
+            self.inv_dataset_transform = ~dataset.transform
+            if crs == dataset.crs:
+                self.transformer = None
+            else:
+                self.transformer = pyproj.Transformer.from_crs(
+                    crs, dataset.crs, always_xy=True
+                )
+            self.nodata_array = np.asarray(
+                [
+                    np.asarray(val, dtype=dt)
+                    for dt, val in zip(dataset.dtypes, dataset.nodatavals)
+                ],
+                dtype=dtype,
             )
-        self.nodata_array = np.asarray(
-            [
-                np.asarray(val, dtype=dt)
-                for dt, val in zip(dataset.dtypes, dataset.nodatavals)
-            ],
-            dtype=dtype,
-        )
-        self.features_shape = self.nodata_array.shape
-        self.nodata_block = np.tile(
-            self.nodata_array, (*self.block_shape, 1)
-        ).transpose(2, 0, 1)
+            self.features_shape = self.nodata_array.shape
+            self.nodata_block = np.tile(
+                self.nodata_array, (*self.block_shape, 1)
+            ).transpose(2, 0, 1)
 
-        self.data = self.dataset.read() if preload_all else None
+            self.data = self.dataset.read() if preload_all else None
 
     def get(
         self, x: Union[float, np.ndarray], y: Union[float, np.ndarray]
