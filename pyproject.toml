@@ -7,7 +7,6 @@ authors = ["Ondřej Cífka <cifkao@gmail.com>"]
 [tool.poetry.dependencies]
 python = ">=3.6,<3.11"
 numpy = "^1.21.5"
-numba = "^0.48.0"
 rasterio = {version = "^1.2.10"}
 
 [tool.poetry.dev-dependencies]

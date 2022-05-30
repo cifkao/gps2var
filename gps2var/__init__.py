@@ -2,7 +2,6 @@ import contextlib
 import os
 from typing import Any, List, Optional, Iterable, Tuple, Union
 
-import numba
 import numpy as np
 import numpy.typing as npt
 import pyproj
@@ -223,9 +222,6 @@ class RasterioValueReader:
 
 
 def _make_normalize(center, scale, num_bands):
-    if center is None and scale is None:
-        return lambda x: None
-
     if center is not None:
         if not isinstance(center, Iterable):
             center = [center] * num_bands
@@ -246,13 +242,10 @@ def _make_normalize(center, scale, num_bands):
             )
         scale = np.asarray(scale)
 
-    @numba.njit
     def _normalize(array):
         if center is not None:
-            for i, val in enumerate(center):
-                array[i] -= val
+            array -= center
         if scale is not None:
-            for i, val in enumerate(scale):
-                array[i] *= val
+            array *= scale
 
     return _normalize
