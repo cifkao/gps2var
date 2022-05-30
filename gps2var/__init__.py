@@ -46,7 +46,7 @@ class RasterioValueReader:
         self.fill_value = fill_value
 
         self.inv_dataset_transform = ~dataset.transform
-        if crs is dataset.crs:
+        if crs == dataset.crs:
             self.transformer = None
         else:
             self.transformer = pyproj.Transformer.from_crs(
