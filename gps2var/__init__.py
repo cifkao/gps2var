@@ -2,6 +2,7 @@ import itertools
 from typing import Any, Optional, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 import pyproj
 import rasterio
 
@@ -16,6 +17,9 @@ class RasterioValueReader:
         interpolation: "nearest" or "bilinear". Defaults to "nearest".
         block_shape: The shape of the blocks read into memory. Defaults to the block
             shape of the first band of the dataset.
+        dtype: The dtype to which to convert the result. Defaults to np.float32.
+        fill_value: The value (scalar) with which to replace missing values.
+            Defaults to np.nan. If None, the original "nodata" values will be kept.
         preload_all: Indicates whether the whole dataset should be loaded into memory
             instead of loading one block at a time. Defaults to False.
     """
@@ -26,6 +30,8 @@ class RasterioValueReader:
         crs: Any = "EPSG:4326",
         interpolation: str = "nearest",
         block_shape: Optional[Tuple[int, int]] = None,
+        dtype: npt.DTypeLike = np.float32,
+        fill_value: Any = np.nan,
         preload_all: bool = False,
     ) -> None:
         if interpolation not in ["nearest", "bilinear"]:
@@ -36,6 +42,8 @@ class RasterioValueReader:
         self.dataset = dataset
         self.block_shape = block_shape or dataset.block_shapes[0]
         self.interpolation = interpolation
+        self.dtype = dtype
+        self.fill_value = fill_value
 
         self.inv_dataset_transform = ~dataset.transform
         if crs is dataset.crs:
@@ -48,9 +56,9 @@ class RasterioValueReader:
             [
                 np.asarray(val, dtype=dt)
                 for dt, val in zip(dataset.dtypes, dataset.nodatavals)
-            ]
+            ],
+            dtype=dtype,
         )
-        self.features_dtype = self.nodata_array.dtype
         self.features_shape = self.nodata_array.shape
         self.nodata_block = np.tile(
             self.nodata_array, (*self.block_shape, 1)
@@ -79,40 +87,49 @@ class RasterioValueReader:
         j, i = self.inv_dataset_transform * (x, y)  # transform to (float) pixel indices
 
         if self.interpolation != "bilinear":
-            values = self.at(np.rint(i).astype(int), np.rint(j).astype(int)).astype(
-                float
+            result = self._at(np.rint(i).astype(int), np.rint(j).astype(int)).astype(
+                self.dtype
             )
-            values[np.isclose(values, self.nodata_array)] = np.nan
-            return values
+            self._fill_nodata(result)
+            return result
 
         # round the indices both ways and get the corresponding values
         i0, j0 = np.floor(i).astype(int), np.floor(j).astype(int)
         i1, j1 = np.ceil(i).astype(int), np.ceil(j).astype(int)
-        interp_values = self.at([i0, i0, i1, i1], [j0, j1, j0, j1])
+        interp_values = self._at([i0, i0, i1, i1], [j0, j1, j0, j1])
+        nodata_mask = np.isclose(interp_values, self.nodata_array)
 
         # compute interpolation weights
         ii = (np.asarray(i) % 1)[..., None]
         jj = (np.asarray(j) % 1)[..., None]
         interp_weights = np.stack(
-            [
-                np.where(v == self.nodata_array, 0.0, w0 * w1)
-                for v, (w0, w1) in zip(
-                    interp_values, itertools.product((1 - ii, ii), (1 - jj, jj))
-                )
-            ]
+            [(1 - ii) * (1 - jj), (1 - ii) * jj, ii * (1 - jj), ii * jj]
         )  # shape [4, ..., num_bands]
+        interp_weights[nodata_mask] = 0.0
 
         assert interp_weights.shape == interp_values.shape
 
-        # renormalize (needed if there are missing values; result is nan if all are missing)
-        with np.errstate(invalid="ignore"):
+        # renormalize (needed if there are missing values)
+        with np.errstate(invalid="ignore", divide="ignore"):
             interp_weights /= interp_weights.sum(axis=0, keepdims=True)
 
         # bilinear interpolation
         # v00 * (1 - ii) * (1 - jj) + v01 * (1 - ii) * jj + v10 * ii * (1 - jj) + v11 * ii * jj
-        return (interp_weights * interp_values).sum(axis=0)
+        result = (interp_weights * interp_values).sum(axis=0)
+        if self.fill_value is None:
+            result = np.where(nodata_mask.all(axis=0), self.nodata_array, result)
+        else:
+            result[nodata_mask.all(axis=0)] = self.fill_value
+        return result
 
     def at(
+        self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
+    ):
+        result = self._at(row_indices, col_indices)
+        self._fill_nodata(result)
+        return result
+
+    def _at(
         self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
     ):
         """Read values from the dataset by row and column indices.
@@ -137,10 +154,9 @@ class RasterioValueReader:
             blocks_unique, blocks_inverse = blocks.reshape(1, 2), np.array([0])
 
         # read the contents of each block, gather the desired values
-        result = np.full(
+        result = np.empty(
             shape=(*self.features_shape, len(blocks_inverse)),
-            fill_value=np.nan,
-            dtype=self.features_dtype,
+            dtype=self.dtype,
         )
         final_shape = (*row_indices.shape, *self.features_shape)
         row_indices = row_indices.reshape(-1) % block_h
@@ -151,6 +167,10 @@ class RasterioValueReader:
             result[:, indices] = block[:, row_indices[indices], col_indices[indices]]
 
         return result.T.reshape(final_shape)
+
+    def _fill_nodata(self, array):
+        if self.fill_value is not None:
+            array[np.isclose(array, self.nodata_array)] = self.fill_value
 
     def _read_block(self, i, j):
         block_h, block_w = self.block_shape
