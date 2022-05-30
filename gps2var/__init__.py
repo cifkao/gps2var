@@ -1,7 +1,8 @@
 import contextlib
 import os
-from typing import Any, Optional, Tuple, Union
+from typing import Any, List, Optional, Iterable, Tuple, Union
 
+import numba
 import numpy as np
 import numpy.typing as npt
 import pyproj
@@ -18,9 +19,13 @@ class RasterioValueReader:
         interpolation: "nearest" or "bilinear". Defaults to "nearest".
         block_shape: The shape of the blocks read into memory. Defaults to the block
             shape of the first band of the dataset.
-        dtype: The dtype to which to convert the result. Defaults to np.float32.
         fill_value: The value (scalar) with which to replace missing values.
             Defaults to np.nan. If None, the original "nodata" values will be kept.
+        feat_dtype: The dtype to which to convert the result. Defaults to np.float32.
+        feat_center: Center each of the features at the given value. Defaults to None
+            (no centering).
+        feat_scale: Scale each of the (centered) features by multiplying it by the
+            given value. Defaults to None (no scaling).
         preload_all: Indicates whether the whole dataset should be loaded into memory
             instead of loading one block at a time. Defaults to False.
     """
@@ -31,8 +36,10 @@ class RasterioValueReader:
         crs: Any = "EPSG:4326",
         interpolation: str = "nearest",
         block_shape: Optional[Tuple[int, int]] = None,
-        dtype: npt.DTypeLike = np.float32,
         fill_value: Any = np.nan,
+        feat_dtype: npt.DTypeLike = np.float32,
+        feat_center: Optional[Union[Any, List[Any]]] = None,
+        feat_scale: Optional[Union[Any, List[Any]]] = None,
         preload_all: bool = False,
     ) -> None:
         if interpolation not in ["nearest", "bilinear"]:
@@ -49,7 +56,7 @@ class RasterioValueReader:
 
             self.block_shape = block_shape or dataset.block_shapes[0]
             self.interpolation = interpolation
-            self.dtype = dtype
+            self.feat_dtype = feat_dtype
             self.fill_value = fill_value
 
             self.inv_dataset_transform = ~dataset.transform
@@ -64,12 +71,15 @@ class RasterioValueReader:
                     np.asarray(val, dtype=dt)
                     for dt, val in zip(dataset.dtypes, dataset.nodatavals)
                 ],
-                dtype=dtype,
+                dtype=feat_dtype,
             )
             self.features_shape = self.nodata_array.shape
             self.nodata_block = np.tile(
                 self.nodata_array, (*self.block_shape, 1)
             ).transpose(2, 0, 1)
+            self._normalize = _make_normalize(
+                feat_center, feat_scale, self.features_shape[0]
+            )
 
             self.data = self.dataset.read() if preload_all else None
 
@@ -95,7 +105,7 @@ class RasterioValueReader:
 
         if self.interpolation != "bilinear":
             result = self._at(np.rint(i).astype(int), np.rint(j).astype(int)).astype(
-                self.dtype
+                self.feat_dtype
             )
             self._fill_nodata(result)
             return result
@@ -127,6 +137,8 @@ class RasterioValueReader:
             result = np.where(nodata_mask.all(axis=0), self.nodata_array, result)
         else:
             result[nodata_mask.all(axis=0)] = self.fill_value
+        with np.errstate(invalid="ignore"):
+            self._normalize(result)
         return result
 
     def at(
@@ -134,6 +146,8 @@ class RasterioValueReader:
     ):
         result = self._at(row_indices, col_indices)
         self._fill_nodata(result)
+        with np.errstate(invalid="ignore"):
+            self._normalize(result)
         return result
 
     def _at(
@@ -163,7 +177,7 @@ class RasterioValueReader:
         # read the contents of each block, gather the desired values
         result = np.empty(
             shape=(*self.features_shape, len(blocks_inverse)),
-            dtype=self.dtype,
+            dtype=self.feat_dtype,
         )
         final_shape = (*row_indices.shape, *self.features_shape)
         row_indices = row_indices.reshape(-1) % block_h
@@ -206,3 +220,39 @@ class RasterioValueReader:
             data = padded
 
         return data
+
+
+def _make_normalize(center, scale, num_bands):
+    if center is None and scale is None:
+        return lambda x: None
+
+    if center is not None:
+        if not isinstance(center, Iterable):
+            center = [center] * num_bands
+        if len(center) != num_bands:
+            raise ValueError(
+                f"Expected feat_center to have {num_bands} elements, "
+                f"got {len(center)}"
+            )
+        center = np.asarray(center)
+
+    if scale is not None:
+        if not isinstance(scale, Iterable):
+            scale = [scale] * num_bands
+        if len(scale) != num_bands:
+            raise ValueError(
+                f"Expected feat_scale to have {num_bands} elements, "
+                f"got {len(scale)}"
+            )
+        scale = np.asarray(scale)
+
+    @numba.njit
+    def _normalize(array):
+        if center is not None:
+            for i, val in enumerate(center):
+                array[i] -= val
+        if scale is not None:
+            for i, val in enumerate(scale):
+                array[i] *= val
+
+    return _normalize
