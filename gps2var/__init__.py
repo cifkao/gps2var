@@ -51,11 +51,33 @@ class RasterioValueReader:
                 dataset = rasterio.open(dataset)
                 if preload_all:
                     ctx.enter_context(dataset)
-            self.dataset = dataset
 
+            if feat_center is not None:
+                if not isinstance(feat_center, Iterable):
+                    feat_center = [feat_center] * dataset.count
+                if len(feat_center) != dataset.count:
+                    raise ValueError(
+                        f"Expected feat_center to have {dataset.count} elements, "
+                        f"got {len(feat_center)}"
+                    )
+                feat_center = np.asarray(feat_center)
+
+            if feat_scale is not None:
+                if not isinstance(feat_scale, Iterable):
+                    feat_scale = [feat_scale] * dataset.count
+                if len(feat_scale) != dataset.count:
+                    raise ValueError(
+                        f"Expected feat_scale to have {dataset.count} elements, "
+                        f"got {len(feat_scale)}"
+                    )
+                feat_scale = np.asarray(feat_scale)
+
+            self.dataset = dataset
             self.block_shape = block_shape or dataset.block_shapes[0]
             self.interpolation = interpolation
             self.feat_dtype = feat_dtype
+            self.feat_center = feat_center
+            self.feat_scale = feat_scale
             self.fill_value = fill_value
 
             self.inv_dataset_transform = ~dataset.transform
@@ -72,13 +94,10 @@ class RasterioValueReader:
                 ],
                 dtype=feat_dtype,
             )
-            self.features_shape = self.nodata_array.shape
+            self.feat_shape = self.nodata_array.shape
             self.nodata_block = np.tile(
                 self.nodata_array, (*self.block_shape, 1)
             ).transpose(2, 0, 1)
-            self._normalize = _make_normalize(
-                feat_center, feat_scale, self.features_shape[0]
-            )
 
             self.data = self.dataset.read() if preload_all else None
 
@@ -103,10 +122,9 @@ class RasterioValueReader:
         j, i = self.inv_dataset_transform * (x, y)  # transform to (float) pixel indices
 
         if self.interpolation != "bilinear":
-            result = self._at(np.rint(i).astype(int), np.rint(j).astype(int)).astype(
-                self.feat_dtype
-            )
+            result = self._at(np.rint(i).astype(int), np.rint(j).astype(int))
             self._fill_nodata(result)
+            self._normalize(result)
             return result
 
         # round the indices both ways and get the corresponding values
@@ -136,8 +154,7 @@ class RasterioValueReader:
             result = np.where(nodata_mask.all(axis=0), self.nodata_array, result)
         else:
             result[nodata_mask.all(axis=0)] = self.fill_value
-        with np.errstate(invalid="ignore"):
-            self._normalize(result)
+        self._normalize(result)
         return result
 
     def at(
@@ -145,8 +162,7 @@ class RasterioValueReader:
     ):
         result = self._at(row_indices, col_indices)
         self._fill_nodata(result)
-        with np.errstate(invalid="ignore"):
-            self._normalize(result)
+        self._normalize(result)
         return result
 
     def _at(
@@ -175,10 +191,10 @@ class RasterioValueReader:
 
         # read the contents of each block, gather the desired values
         result = np.empty(
-            shape=(*self.features_shape, len(blocks_inverse)),
+            shape=(*self.feat_shape, len(blocks_inverse)),
             dtype=self.feat_dtype,
         )
-        final_shape = (*row_indices.shape, *self.features_shape)
+        final_shape = (*row_indices.shape, *self.feat_shape)
         row_indices = row_indices.reshape(-1) % block_h
         col_indices = col_indices.reshape(-1) % block_w
         for idx, (i, j) in enumerate(blocks_unique):
@@ -191,6 +207,13 @@ class RasterioValueReader:
     def _fill_nodata(self, array):
         if self.fill_value is not None:
             array[np.isclose(array, self.nodata_array)] = self.fill_value
+
+    def _normalize(self, array):
+        with np.errstate(invalid="ignore"):
+            if self.feat_center is not None:
+                array -= self.feat_center
+            if self.feat_scale is not None:
+                array *= self.feat_scale
 
     def _read_block(self, i, j):
         block_h, block_w = self.block_shape
@@ -219,33 +242,3 @@ class RasterioValueReader:
             data = padded
 
         return data
-
-
-def _make_normalize(center, scale, num_bands):
-    if center is not None:
-        if not isinstance(center, Iterable):
-            center = [center] * num_bands
-        if len(center) != num_bands:
-            raise ValueError(
-                f"Expected feat_center to have {num_bands} elements, "
-                f"got {len(center)}"
-            )
-        center = np.asarray(center)
-
-    if scale is not None:
-        if not isinstance(scale, Iterable):
-            scale = [scale] * num_bands
-        if len(scale) != num_bands:
-            raise ValueError(
-                f"Expected feat_scale to have {num_bands} elements, "
-                f"got {len(scale)}"
-            )
-        scale = np.asarray(scale)
-
-    def _normalize(array):
-        if center is not None:
-            array -= center
-        if scale is not None:
-            array *= scale
-
-    return _normalize
