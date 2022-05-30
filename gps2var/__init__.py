@@ -42,7 +42,9 @@ class RasterioValueReader:
 
         with contextlib.ExitStack() as ctx:
             if not isinstance(dataset, rasterio.DatasetReader):
-                dataset = ctx.enter_context(rasterio.open(dataset))
+                dataset = rasterio.open(dataset)
+                if preload_all:
+                    ctx.enter_context(dataset)
             self.dataset = dataset
 
             self.block_shape = block_shape or dataset.block_shapes[0]
