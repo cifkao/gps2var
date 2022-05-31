@@ -1,4 +1,7 @@
+import abc
+import concurrent.futures as cf
 import contextlib
+import multiprocessing.managers as mp_managers
 import os
 from typing import Any, List, Optional, Iterable, Tuple, Union
 
@@ -6,9 +9,31 @@ import numpy as np
 import numpy.typing as npt
 import pyproj
 import rasterio
+import rasterio.io
 
 
-class RasterioValueReader:
+class RasterValueReaderBase(abc.ABC):
+    @abc.abstractmethod
+    def get(
+        self,
+        x: Union[float, np.ndarray],
+        y: Union[float, np.ndarray],
+        extra: Any = None,
+    ) -> np.ndarray:
+        pass
+
+    @abc.abstractmethod
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+
+class RasterValueReader(RasterValueReaderBase):
     """Enables querying Rasterio dataset using coordinates.
 
     Args:
@@ -27,6 +52,8 @@ class RasterioValueReader:
             given value. Defaults to None (no scaling).
         preload_all: Indicates whether the whole dataset should be loaded into memory
             instead of loading one block at a time. Defaults to False.
+        early_cast: Indicates whether the data should be cast to feat_dtype as soon as
+            it is read. Defaults to False.
     """
 
     def __init__(
@@ -40,7 +67,10 @@ class RasterioValueReader:
         feat_center: Optional[Union[Any, List[Any]]] = None,
         feat_scale: Optional[Union[Any, List[Any]]] = None,
         preload_all: bool = False,
+        early_cast: bool = True,
     ) -> None:
+        super().__init__()
+
         if interpolation not in ["nearest", "bilinear"]:
             raise ValueError(
                 f"interpolation must be 'nearest' or 'bilinear', got {repr(interpolation)}"
@@ -79,6 +109,7 @@ class RasterioValueReader:
             self.feat_center = feat_center
             self.feat_scale = feat_scale
             self.fill_value = fill_value
+            self.early_cast = early_cast
 
             self.inv_dataset_transform = ~dataset.transform
             if crs == dataset.crs:
@@ -87,22 +118,26 @@ class RasterioValueReader:
                 self.transformer = pyproj.Transformer.from_crs(
                     crs, dataset.crs, always_xy=True
                 )
-            self.nodata_array = np.asarray(
-                [
-                    np.asarray(val, dtype=dt)
-                    for dt, val in zip(dataset.dtypes, dataset.nodatavals)
-                ],
-                dtype=feat_dtype,
-            )
+            self.nodata_array = np.asarray(dataset.nodatavals, dtype=feat_dtype)
             self.feat_shape = self.nodata_array.shape
             self.nodata_block = np.tile(
                 self.nodata_array, (*self.block_shape, 1)
             ).transpose(2, 0, 1)
 
-            self.data = self.dataset.read() if preload_all else None
+            self.data = (
+                self.dataset.read(out_dtype=feat_dtype if early_cast else None)
+                if preload_all
+                else None
+            )
+
+    def close(self):
+        self.dataset.close()
 
     def get(
-        self, x: Union[float, np.ndarray], y: Union[float, np.ndarray]
+        self,
+        x: Union[float, np.ndarray],
+        y: Union[float, np.ndarray],
+        extra: Any = None,
     ) -> np.ndarray:
         """Read values from the dataset by coordinates.
 
@@ -159,7 +194,7 @@ class RasterioValueReader:
 
     def at(
         self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
-    ):
+    ) -> np.ndarray:
         result = self._at(row_indices, col_indices)
         self._fill_nodata(result)
         self._normalize(result)
@@ -167,7 +202,7 @@ class RasterioValueReader:
 
     def _at(
         self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
-    ):
+    ) -> np.ndarray:
         """Read values from the dataset by row and column indices.
 
         Args:
@@ -204,18 +239,18 @@ class RasterioValueReader:
 
         return result.T.reshape(final_shape)
 
-    def _fill_nodata(self, array):
+    def _fill_nodata(self, array: np.ndarray) -> None:
         if self.fill_value is not None:
             array[np.isclose(array, self.nodata_array)] = self.fill_value
 
-    def _normalize(self, array):
+    def _normalize(self, array: np.ndarray) -> None:
         with np.errstate(invalid="ignore"):
             if self.feat_center is not None:
                 array -= self.feat_center
             if self.feat_scale is not None:
                 array *= self.feat_scale
 
-    def _read_block(self, i, j):
+    def _read_block(self, i: int, j: int) -> np.ndarray:
         block_h, block_w = self.block_shape
 
         # handle invalid coordinates
@@ -233,7 +268,10 @@ class RasterioValueReader:
         if self.data is not None:
             data = self.data[:, i0:i1, j0:j1]
         else:
-            data = self.dataset.read(window=((i0, i1), (j0, j1)))
+            data = self.dataset.read(
+                window=((i0, i1), (j0, j1)),
+                out_dtype=self.feat_dtype if self.early_cast else None,
+            )
 
         # handle incomplete blocks at the boundary
         if data.shape[1:] != (block_h, block_w):
@@ -242,3 +280,120 @@ class RasterioValueReader:
             data = padded
 
         return data
+
+
+class MultiRasterValueReader(RasterValueReaderBase):
+    """A convenience reader that reads from multiple readers and concatentates the
+    results.
+
+    The first argument is a list of RasterValueReaders or Rasterio DatasetReaders. In
+    the latter case, the rest of the arguments will be used to instantiate the
+    corresponding RasterValueReaders.
+    """
+
+    def __init__(
+        self,
+        readers: Optional[List[Any]] = None,
+        num_workers: Optional[int] = None,
+        crs: Any = "EPSG:4326",
+        interpolation: str = "nearest",
+        block_shape: Optional[Tuple[int, int]] = None,
+        fill_value: Any = np.nan,
+        feat_dtype: npt.DTypeLike = np.float32,
+        feat_center: Optional[Union[Any, List[Any]]] = None,
+        feat_scale: Optional[Union[Any, List[Any]]] = None,
+        preload_all: bool = False,
+        early_cast: bool = True,
+    ) -> None:
+        super().__init__()
+
+        self._pool = cf.ThreadPoolExecutor(num_workers) if num_workers else None
+        self._map_fn = self._pool.map if self._pool else map
+
+        def make_reader(reader):
+            if isinstance(reader, (RasterValueReaderBase, mp_managers.BaseProxy)):
+                return reader
+            return RasterValueReader(
+                dataset=reader,
+                crs=crs,
+                interpolation=interpolation,
+                block_shape=block_shape,
+                fill_value=fill_value,
+                feat_dtype=feat_dtype,
+                feat_center=feat_center,
+                feat_scale=feat_scale,
+                preload_all=preload_all,
+                early_cast=early_cast,
+            )
+
+        self.readers = list(self._map_fn(make_reader, readers))
+
+    def close(self):
+        if self._pool:
+            self._pool.shutdown()
+        for reader in self.readers:
+            reader.close()
+
+    def get(
+        self,
+        x: Union[float, np.ndarray],
+        y: Union[float, np.ndarray],
+        extra: Any = None,
+    ) -> np.ndarray:
+        results = self._map_fn(lambda rd: rd.get(x, y, extra), self.readers)
+        return np.concatenate(list(results), axis=-1)
+
+    def at(
+        self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
+    ) -> np.ndarray:
+        results = self._map_fn(lambda rd: rd.at(row_indices, col_indices), self.readers)
+        return np.concatenate(list(results), axis=-1)
+
+
+class ZipRasterValueReader(MultiRasterValueReader):
+    def __init__(
+        self,
+        zip_path: str,
+        raster_paths: List[str],
+        num_workers: Optional[int] = None,
+        crs: Any = "EPSG:4326",
+        interpolation: str = "nearest",
+        block_shape: Optional[Tuple[int, int]] = None,
+        fill_value: Any = np.nan,
+        feat_dtype: npt.DTypeLike = np.float32,
+        feat_center: Optional[Union[Any, List[Any]]] = None,
+        feat_scale: Optional[Union[Any, List[Any]]] = None,
+        preload_all: bool = False,
+        early_cast: bool = True,
+    ) -> None:
+        self._zip_file = open(zip_path, "rb")
+        self._zip_memory_file = rasterio.io.ZipMemoryFile(self._zip_file)
+        readers = [self._zip_memory_file.open(path) for path in raster_paths]
+
+        super().__init__(
+            readers,
+            num_workers=num_workers,
+            crs=crs,
+            interpolation=interpolation,
+            block_shape=block_shape,
+            fill_value=fill_value,
+            feat_dtype=feat_dtype,
+            feat_center=feat_center,
+            feat_scale=feat_scale,
+            preload_all=preload_all,
+            early_cast=early_cast,
+        )
+
+        if preload_all:
+            self._zip_memory_file.close()
+            self._zip_file.close()
+            self._zip_memory_file, self._zip_file = None, None
+
+    def close(self):
+        try:
+            for reader in self.readers:
+                reader.close()
+        finally:
+            if self._zip_file:
+                self._zip_memory_file.close()
+                self._zip_file.close()
