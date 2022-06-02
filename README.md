@@ -2,7 +2,8 @@
 Fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
 
 ```python
-PATH = "/vsizip/wc2.1_30s_bio.zip/wc2.1_30s_bio_1.tif"  # average yearly temperature from BioClim
+PATH = "/vsizip/wc2.1_30s_bio.zip/wc2.1_30s_bio_1.tif"  # WorldClim annual mean temperature
+
 with gps2var.RasterValueReader(PATH, interpolation='bilinear') as reader:
     lat, lon = 48.858222, 2.2945
     reader.get(lon, lat)  # [11.94036207]
