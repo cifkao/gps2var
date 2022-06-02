@@ -76,22 +76,34 @@ class RasterReaderSpec:
                 f"interpolation must be 'nearest' or 'bilinear', got {repr(self.interpolation)}"
             )
 
+    @classmethod
+    def from_any(
+        cls, obj: Optional["RasterReaderSpecLike"], **kwargs
+    ) -> "RasterReaderSpec":
+        if isinstance(obj, cls):
+            if kwargs:
+                return dataclasses.replace(obj, **kwargs)
+            return obj
+        if obj is None:
+            return cls(**kwargs)
+        return cls(path=obj, **kwargs)
+
+
+RasterReaderSpecLike = Union[str, RasterReaderSpec]
+
 
 class RasterValueReader(RasterValueReaderBase):
     """Enables querying a Rasterio dataset using coordinates."""
 
     def __init__(
         self,
-        spec: Optional[RasterReaderSpec] = None,
+        spec: Optional[RasterReaderSpecLike] = None,
         dataset: Optional[rasterio.DatasetReader] = None,
         **kwargs,
     ) -> None:
         super().__init__()
 
-        if spec is None:
-            spec = RasterReaderSpec(**kwargs)
-        else:
-            spec = dataclasses.replace(spec, **kwargs)
+        spec = RasterReaderSpec.from_any(spec, **kwargs)
         self.spec = spec
 
         with contextlib.ExitStack() as ctx:
@@ -311,7 +323,7 @@ class MultiRasterValueReader(RasterValueReaderBase):
 
     def __init__(
         self,
-        specs: Optional[List[RasterReaderSpec]] = None,
+        specs: Optional[List[RasterReaderSpecLike]] = None,
         datasets: Optional[List[rasterio.DatasetReader]] = None,
         num_workers: Optional[int] = None,
         **kwargs,
@@ -360,7 +372,7 @@ class ZipRasterValueReader(MultiRasterValueReader):
     def __init__(
         self,
         zip_path: str,
-        specs: List[RasterReaderSpec],
+        specs: List[RasterReaderSpecLike],
         num_workers: Optional[int] = None,
         **kwargs,
     ) -> None:

@@ -18,7 +18,7 @@ Manager.register("RasterValueReader", core.RasterValueReader)
 class MultiRasterValueReader(core.RasterValueReaderBase):
     def __init__(
         self,
-        specs: List[core.RasterReaderSpec],
+        specs: List[core.RasterReaderSpecLike],
         num_workers: Optional[int] = None,
         **kwargs
     ):
