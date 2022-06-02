@@ -2,15 +2,25 @@
 Fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
 
 ```python
-import rasterio
-from gps2var import RasterioValueReader
-
-dataset = rasterio.open("wildareas-v3-2009-human-footprint.tif")
-value_reader = RasterioValueReader(dataset=dataset, interpolation="bilinear")
-
-lat, lon = 48.858222, 2.2945
-value_reader.get(lon, lat)  # array([36.72506563])
+PATH = "/vsizip/wc2.1_30s_bio.zip/wc2.1_30s_bio_1.tif"  # average yearly temperature from BioClim
+with gps2var.RasterValueReader(PATH, interpolation='bilinear') as reader:
+    lat, lon = 48.858222, 2.2945
+    reader.get(lon, lat)  # [11.94036207]
 ```
 
-## Multiprocessing
-The Rasterio dataset cannot be shared by multiple processes. When using multiprocessing (e.g. in a PyTorch `DataLoader`), either make sure to open the dataset anew in each worker process, or pass `preload_all=True` to load the whole dataset into memory and share it across workers.
+## Parallel reading from multiple rasters
+
+```python
+# min and max temperature by month (averages for 1970-2000)
+PATHS = [f"/vsizip/wc2.1_30s_{var}.zip/wc2.1_30s_{var}_{i:02}.tif"
+         for var in ["tmin" , "tmax"] for i in range(1, 13)]
+
+with gps2var.MultiRasterValueReader(PATHS, num_workers=len(PATHS)) as reader:
+    lat, lon = 48.858222, 2.2945
+    reader.get(lon, lat).reshape(2, 12)
+    
+# [[ 2.3  2.5  4.6  6.3 10.1 13.  15.  14.9 12.   8.8  5.   3.4]
+#  [ 7.2  8.4 11.9 14.9 19.2 22.  24.7 24.8 20.9 15.9 10.6  8. ]]
+```
+
+Replace `gps2var.MultiRasterValueReader` by `gps2var.mp.MultiRasterValueReader` to use multiprocessing instead of multithreading.
