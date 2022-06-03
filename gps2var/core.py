@@ -56,7 +56,7 @@ class RasterReaderSpec:
         preload_all: Indicates whether the whole dataset should be loaded into memory
             instead of loading one block at a time. Defaults to False.
         early_cast: Indicates whether the data should be cast to feat_dtype as soon as
-            it is read. Defaults to False.
+            it is read. Defaults to True.
     """
 
     path: Union[str, os.PathLike, rasterio.path.Path]
