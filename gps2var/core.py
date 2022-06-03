@@ -104,6 +104,8 @@ class RasterValueReader(RasterValueReaderBase):
     ) -> None:
         super().__init__()
 
+        if dataset is not None:
+            kwargs["path"] = dataset.name
         spec = RasterReaderSpec.from_any(spec, **kwargs)
         self.spec = spec
 
