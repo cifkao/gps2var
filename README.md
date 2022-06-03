@@ -39,7 +39,7 @@ Here are examples of usage that do work:
   ```python
   # in __init__:
   self.manager = gps2var.ProcessManager()
-  self.manager.start()  # start a new thread
+  self.manager.start()  # start a new process
   self.reader = manager.RasterValueReader(path)  # proxy object
   
   # in __getitem__:
