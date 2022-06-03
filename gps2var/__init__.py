@@ -5,5 +5,5 @@ from .core import (
     RasterValueReader,
     MultiRasterValueReader,
     ZipRasterValueReader,
+    ProcessManager,
 )
-from . import mp

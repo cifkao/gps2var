@@ -2,6 +2,7 @@ import abc
 import concurrent.futures as cf
 import contextlib
 import dataclasses
+from multiprocessing.managers import BaseManager, BaseProxy
 import os
 import threading
 from typing import Any, List, Optional, Iterable, Tuple, Union
@@ -149,12 +150,13 @@ class RasterValueReader(RasterValueReaderBase):
             ).transpose(2, 0, 1)
 
             self._read_lock = threading.Lock()
-            with self._read_lock:
-                self.data = (
-                    dataset.read(out_dtype=spec.feat_dtype if spec.early_cast else None)
-                    if spec.preload_all
-                    else None
-                )
+            if spec.preload_all:
+                with self._read_lock:
+                    self.data = dataset.read(
+                        out_dtype=spec.feat_dtype if spec.early_cast else None
+                    )
+            else:
+                self.data = None
 
             self.dataset = dataset
 
@@ -325,32 +327,65 @@ class MultiRasterValueReader(RasterValueReaderBase):
         self,
         specs: Optional[List[RasterReaderSpecLike]] = None,
         datasets: Optional[List[rasterio.DatasetReader]] = None,
-        num_workers: Optional[int] = None,
+        readers: Optional[List[Union[RasterValueReaderBase, BaseProxy]]] = None,
+        num_threads: int = 0,
+        use_multiprocessing: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
 
-        self._pool = cf.ThreadPoolExecutor(num_workers) if num_workers else None
-        self._map_fn = self._pool.map if self._pool else map
+        self._exit_stack = contextlib.ExitStack()
+        try:
+            if readers is None:
+                if specs is None and datasets is None:
+                    raise TypeError(
+                        "At least one of specs, datasets and readers must be given"
+                    )
+                specs = specs or [None] * len(datasets)
+                datasets = datasets or [None] * len(specs)
+                if len(specs) != len(datasets):
+                    raise ValueError("specs and datasets must be the same length")
 
-        specs = specs or [None] * len(datasets)
-        datasets = datasets or [None] * len(specs)
-        if len(specs) != len(datasets):
-            raise ValueError("specs and datasets must be the same length")
+                if use_multiprocessing:
+                    # Create a separate process for each dataset
+                    managers = [
+                        self._exit_stack.enter_context(ProcessManager()) for _ in specs
+                    ]
+                else:
+                    managers = [None] * len(specs)
 
-        self.readers = list(
-            self._map_fn(
-                lambda spec, ds: RasterValueReader(spec=spec, dataset=ds, **kwargs),
-                specs,
-                datasets,
-            )
-        )
+                def make_reader(spec, dataset, manager=None):
+                    if manager:
+                        return contextlib.closing(
+                            manager.RasterValueReader(
+                                spec=spec, dataset=dataset, **kwargs
+                            )
+                        )
+                    return RasterValueReader(spec=spec, dataset=dataset, **kwargs)
+
+                # Create readers, possibly in parallel
+                with _parallel_map_fn(num_threads) as map_fn:
+                    self.readers = [
+                        self._exit_stack.enter_context(reader)
+                        for reader in map_fn(make_reader, specs, datasets, managers)
+                    ]
+            else:
+                if not (specs is None and datasets is None and not kwargs):
+                    raise TypeError(
+                        "Unexpected specs, datasets or kwargs because "
+                        "readers were given"
+                    )
+                self.readers = readers
+
+            # Making a new thread pool here that we only use after forking (if using
+            # multiprocessing), otherwise we could get a deadlock
+            self._map_fn = self._exit_stack.enter_context(_parallel_map_fn(num_threads))
+        except:
+            with self._exit_stack:
+                raise
 
     def close(self):
-        if self._pool:
-            self._pool.shutdown()
-        for reader in self.readers:
-            reader.close()
+        self._exit_stack.close()
 
     def get(
         self,
@@ -368,12 +403,21 @@ class MultiRasterValueReader(RasterValueReaderBase):
         return np.concatenate(list(results), axis=-1)
 
 
+@contextlib.contextmanager
+def _parallel_map_fn(num_threads):
+    if num_threads:
+        with cf.ThreadPoolExecutor(num_threads) as pool:
+            yield pool.map
+    else:
+        yield map
+
+
 class ZipRasterValueReader(MultiRasterValueReader):
     def __init__(
         self,
         zip_path: str,
         specs: List[RasterReaderSpecLike],
-        num_workers: Optional[int] = None,
+        num_threads: Optional[int] = None,
         **kwargs,
     ) -> None:
         self._zip_file = open(zip_path, "rb")
@@ -383,7 +427,7 @@ class ZipRasterValueReader(MultiRasterValueReader):
         ]
 
         super().__init__(
-            specs=specs, datasets=datasets, num_workers=num_workers, **kwargs
+            specs=specs, datasets=datasets, num_threads=num_threads, **kwargs
         )
 
         if kwargs.get("preload_all", False) or all(sp.preload_all for sp in specs):
@@ -399,3 +443,12 @@ class ZipRasterValueReader(MultiRasterValueReader):
             if self._zip_file:
                 self._zip_memory_file.close()
                 self._zip_file.close()
+
+
+class ProcessManager(BaseManager):
+    pass
+
+
+ProcessManager.register("RasterValueReader", RasterValueReader)
+ProcessManager.register("MultiRasterValueReader", MultiRasterValueReader)
+ProcessManager.register("ZipRasterValueReader", ZipRasterValueReader)
