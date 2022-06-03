@@ -104,7 +104,9 @@ class RasterValueReader(RasterValueReaderBase):
     ) -> None:
         super().__init__()
 
-        if dataset is not None:
+        self._created_from_dataset = dataset is not None
+
+        if self._created_from_dataset and "path" not in kwargs:
             kwargs["path"] = dataset.name
         spec = RasterReaderSpec.from_any(spec, **kwargs)
         self.spec = spec
@@ -319,11 +321,25 @@ class RasterValueReader(RasterValueReaderBase):
 
         return data
 
+    def __reduce__(self):
+        if self._created_from_dataset:
+            raise RuntimeError(
+                "Cannot serialize a reader created from a "
+                "rasterio.DatasetReader object"
+            )
+        return (self._reconstruct, (self.spec,))
+
+    @classmethod
+    def _reconstruct(cls, spec):
+        return cls(spec=spec)
+
 
 class MultiRasterValueReader(RasterValueReaderBase):
     """A convenience reader that reads from multiple readers and concatentates the
     results.
     """
+
+    _reduce_kwargs = ["readers", "num_threads", "use_multiprocessing"]
 
     def __init__(
         self,
@@ -335,6 +351,9 @@ class MultiRasterValueReader(RasterValueReaderBase):
         **kwargs,
     ) -> None:
         super().__init__()
+
+        self.num_threads = num_threads
+        self.use_multiprocessing = use_multiprocessing
 
         self._exit_stack = contextlib.ExitStack()
         try:
@@ -403,6 +422,16 @@ class MultiRasterValueReader(RasterValueReaderBase):
     ) -> np.ndarray:
         results = self._map_fn(lambda rd: rd.at(row_indices, col_indices), self.readers)
         return np.concatenate(list(results), axis=-1)
+
+    def __reduce__(self):
+        return (
+            self._reconstruct,
+            ({k: self.__dict__[k] for k in self._reduce_kwargs},),
+        )
+
+    @classmethod
+    def _reconstruct(cls, kwargs):
+        return cls(**kwargs)
 
 
 @contextlib.contextmanager
