@@ -81,16 +81,20 @@ class RasterReaderSpec:
     def from_any(
         cls, obj: Optional["RasterReaderSpecLike"], **kwargs
     ) -> "RasterReaderSpec":
+        if obj is None:
+            return cls(**kwargs)
         if isinstance(obj, cls):
             if kwargs:
                 return dataclasses.replace(obj, **kwargs)
             return obj
-        if obj is None:
-            return cls(**kwargs)
+        if isinstance(obj, dict):
+            return cls(**{**obj, **kwargs})
         return cls(path=obj, **kwargs)
 
 
-RasterReaderSpecLike = Union[str, RasterReaderSpec]
+RasterReaderSpecLike = Union[
+    RasterReaderSpec, dict, str, os.PathLike, rasterio.path.Path
+]
 
 
 class RasterValueReader(RasterValueReaderBase):
