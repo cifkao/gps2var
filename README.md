@@ -28,19 +28,19 @@ with gps2var.MultiRasterValueReader(PATHS, num_threads=len(PATHS)) as reader:
 Set `use_multiprocessing=True` to create a separate process for each raster. This is likely to be faster than the default (i.e. multithreading), at least if the number of rasters is large.
 
 ## PyTorch DataLoaders
-Using a `RasterValueReader` with a PyTorch DataLoader with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) will not work.
+Using a `RasterValueReader` with a PyTorch DataLoader with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) **will not work**.
 
 Here are examples of usage that do work:
 - Using `multiprocessing.set_start_method("spawn")`. This will create a copy of the reader in each worker process.
 - Setting `preload_all=True` so that the whole raster is loaded into memory.
-- (with multiple rasters) Using `MultiRasterValueReader` as above, but setting `use_multiprocessing=True`. This way, each raster wil be read in a separate process.
+- (with multiple rasters) Using `MultiRasterValueReader` as above, but with `use_multiprocessing=True`. This way, each raster wil be read in a separate process.
 - Using `ProcessManager`, e.g.:
 
   ```python
   # in __init__:
   self.manager = gps2var.ProcessManager()
   self.manager.start()  # start a new thread
-  self.reader = manager.RasterValueReader()  # proxy object
+  self.reader = manager.RasterValueReader(path)  # proxy object
   
   # in __getitem__:
   self.reader.get(lon, lat)
