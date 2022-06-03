@@ -10,13 +10,14 @@ with gps2var.RasterValueReader(PATH, interpolation='bilinear') as reader:
 ```
 
 ## Parallel reading from multiple rasters
+`MultiRasterValueReader` reads from multiple datasets and concatenates the results.
 
 ```python
 # min and max temperature by month (averages for 1970-2000)
 PATHS = [f"/vsizip/wc2.1_30s_{var}.zip/wc2.1_30s_{var}_{i:02}.tif"
          for var in ["tmin" , "tmax"] for i in range(1, 13)]
 
-with gps2var.MultiRasterValueReader(PATHS, num_workers=len(PATHS)) as reader:
+with gps2var.MultiRasterValueReader(PATHS, num_threads=len(PATHS)) as reader:
     lat, lon = 48.858222, 2.2945
     reader.get(lon, lat).reshape(2, 12)
     
@@ -24,4 +25,4 @@ with gps2var.MultiRasterValueReader(PATHS, num_workers=len(PATHS)) as reader:
 #  [ 7.2  8.4 11.9 14.9 19.2 22.  24.7 24.8 20.9 15.9 10.6  8. ]]
 ```
 
-Replace `gps2var.MultiRasterValueReader` by `gps2var.mp.MultiRasterValueReader` to use multiprocessing instead of multithreading.
+Use `MultiRasterValueReader` with `use_multiprocessing=True` to create a separate process for each dataset.
