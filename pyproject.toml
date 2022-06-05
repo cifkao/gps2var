@@ -7,7 +7,8 @@ authors = ["Ondřej Cífka <cifkao@gmail.com>"]
 [tool.poetry.dependencies]
 python = ">=3.7,<3.11"
 numpy = "^1.21.5"
-rasterio = {version = "^1.2.10"}
+rasterio = "^1.2.10"
+pyproj = "^3.2.1"
 
 [tool.poetry.dev-dependencies]
 black = "^22.1.0"
