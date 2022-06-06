@@ -1,6 +1,6 @@
 # gps2var
 `gps2var` is a Python library providing fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
-In particular, it allows parallel requests with coordinates specified as large NumPy arrays of arbitrary shapes.
+In particular, it allows parallel calls with coordinates specified as large NumPy arrays of arbitrary shapes, and is compatible with PyTorch data loaders.
 
 ## Examples
 ### Reading from a single file
