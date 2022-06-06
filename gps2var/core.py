@@ -212,8 +212,11 @@ class RasterValueReader(RasterValueReaderBase):
         nodata_mask = np.isclose(interp_values, self._nodata_array)
 
         # compute interpolation weights
-        ii = (np.asarray(i) % 1)[..., None]
-        jj = (np.asarray(j) % 1)[..., None]
+        w_dtype = interp_values.dtype
+        if w_dtype.kind != "f":
+            w_dtype = np.float_
+        ii = (np.asarray(i) % 1)[..., None].astype(w_dtype)
+        jj = (np.asarray(j) % 1)[..., None].astype(w_dtype)
         interp_weights = np.stack(
             [(1 - ii) * (1 - jj), (1 - ii) * jj, ii * (1 - jj), ii * jj]
         )  # shape [4, ..., num_bands]
