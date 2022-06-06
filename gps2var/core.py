@@ -191,13 +191,10 @@ class RasterValueReader(RasterValueReaderBase):
         """
         x, y = np.asarray(x), np.asarray(y)
         if self._transformer:
-            x, y = self._transformer.transform(
-                x, y
-            )  # transform to dataset coordinnates
-        j, i = self._inv_dataset_transform * (
-            x,
-            y,
-        )  # transform to (float) pixel indices
+            # transform to dataset coordinnates
+            x, y = self._transformer.transform(x, y)
+        # transform to (float) pixel indices
+        j, i = self._inv_dataset_transform * (x, y)
 
         if self.spec.interpolation != "bilinear":
             result = self._iget(np.rint(i).astype(int), np.rint(j).astype(int))
