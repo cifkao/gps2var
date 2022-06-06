@@ -350,14 +350,11 @@ class MultiRasterValueReader(RasterValueReaderBase):
         specs: Optional[List[RasterReaderSpecLike]] = None,
         datasets: Optional[List[rasterio.DatasetReader]] = None,
         readers: Optional[List[Union[RasterValueReaderBase, BaseProxy]]] = None,
-        num_threads: int = 0,
+        num_threads: Optional[int] = None,
         use_multiprocessing: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
-
-        self.num_threads = num_threads
-        self.use_multiprocessing = use_multiprocessing
 
         self._exit_stack = contextlib.ExitStack()
         try:
@@ -388,6 +385,9 @@ class MultiRasterValueReader(RasterValueReaderBase):
                         )
                     return RasterValueReader(spec=spec, dataset=dataset, **kwargs)
 
+                if num_threads is None:
+                    num_threads = len(specs)
+
                 # Create readers, possibly in parallel
                 with _parallel_map_fn(num_threads) as map_fn:
                     self.readers = [
@@ -402,9 +402,15 @@ class MultiRasterValueReader(RasterValueReaderBase):
                     )
                 self.readers = readers
 
+            if num_threads is None:
+                num_threads = len(self.readers)
+
             # Making a new thread pool here that we only use after forking (if using
             # multiprocessing), otherwise we could get a deadlock
             self._map_fn = self._exit_stack.enter_context(_parallel_map_fn(num_threads))
+
+            self.num_threads = num_threads
+            self.use_multiprocessing = use_multiprocessing
         except:
             with self._exit_stack:
                 raise
