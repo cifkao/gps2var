@@ -200,7 +200,7 @@ class RasterValueReader(RasterValueReaderBase):
         )  # transform to (float) pixel indices
 
         if self.spec.interpolation != "bilinear":
-            result = self._at(np.rint(i).astype(int), np.rint(j).astype(int))
+            result = self._iget(np.rint(i).astype(int), np.rint(j).astype(int))
             self._fill_nodata(result)
             self._normalize(result)
             return result
@@ -208,7 +208,7 @@ class RasterValueReader(RasterValueReaderBase):
         # round the indices both ways and get the corresponding values
         i0, j0 = np.floor(i).astype(int), np.floor(j).astype(int)
         i1, j1 = np.ceil(i).astype(int), np.ceil(j).astype(int)
-        interp_values = self._at([i0, i0, i1, i1], [j0, j1, j0, j1])
+        interp_values = self._iget([i0, i0, i1, i1], [j0, j1, j0, j1])
         nodata_mask = np.isclose(interp_values, self._nodata_array)
 
         # compute interpolation weights
@@ -238,15 +238,15 @@ class RasterValueReader(RasterValueReaderBase):
         self._normalize(result)
         return result
 
-    def at(
+    def iget(
         self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
     ) -> np.ndarray:
-        result = self._at(row_indices, col_indices)
+        result = self._iget(row_indices, col_indices)
         self._fill_nodata(result)
         self._normalize(result)
         return result
 
-    def _at(
+    def _iget(
         self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
     ) -> np.ndarray:
         """Read values from the dataset by row and column indices.
@@ -430,10 +430,12 @@ class MultiRasterValueReader(RasterValueReaderBase):
         results = self._map_fn(lambda rd: rd.get(x, y, extra), self.readers)
         return np.concatenate(list(results), axis=-1)
 
-    def at(
+    def iget(
         self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
     ) -> np.ndarray:
-        results = self._map_fn(lambda rd: rd.at(row_indices, col_indices), self.readers)
+        results = self._map_fn(
+            lambda rd: rd.iget(row_indices, col_indices), self.readers
+        )
         return np.concatenate(list(results), axis=-1)
 
     def __reduce__(self):
