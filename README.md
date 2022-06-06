@@ -1,6 +1,9 @@
 # gps2var
-Fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
+`gps2var` is a Python library providing fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
+In particular, it allows parallel requests with coordinates specified as large NumPy arrays of arbitrary shapes.
 
+## Examples
+### Reading from a single file
 ```python
 PATH = "/vsizip/wc2.1_30s_bio.zip/wc2.1_30s_bio_1.tif"  # WorldClim annual mean temperature
 
@@ -9,7 +12,7 @@ with gps2var.RasterValueReader(PATH, interpolation='bilinear') as reader:
     reader.get(lon, lat)  # [11.94036207]
 ```
 
-## Parallel reading from multiple rasters
+### Parallel reading from multiple files
 `MultiRasterValueReader` reads from multiple raster files and concatenates the results.
 
 ```python
@@ -27,13 +30,39 @@ with gps2var.MultiRasterValueReader(PATHS, num_threads=len(PATHS)) as reader:
 
 Set `use_multiprocessing=True` to create a separate process for each raster. This is likely to be faster than the default (i.e. multithreading), at least if the number of rasters is large.
 
-## PyTorch DataLoaders
-Using a `RasterValueReader` with a PyTorch DataLoader with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) **will not work**.
+## API
+
+### `RasterValueReader`
+
+Can be created with a path to a file that can be read by Rasterio, or an open Rasterio `DatasetReader`. The behavior can be customized with keyword parameters; the most important ones are:
+- `crs`: The coordinate reference system to use for querying. By default this is EPSG:4326, i.e. longitude and latitude (in this order) as used by GPS.
+- `interpolation`: `"nearest"` (default) or `"bilinear"` (slower).
+- `fill_value`: The value (scalar) with which to replace missing values. Defaults to `np.nan`.
+- `feat_dtype`: The dtype to which to convert the result. Defaults to `np.float32`.
+- `feat_center`: Center each of the features at the given value. Defaults to `None` (no centering).
+- `feat_scale`: Scale each of the (centered) features by multiplying it by the given value. Defaults to `None` (no scaling).
+- `block_shape`: The shape of the blocks read into memory (and stored in the GDAL block cache).
+- `preload_all`: Indicates whether the whole dataset should be loaded into memory instead of loading one block at a time. Defaults to `False`.
+
+Another option is to wrap all these arguments in a `RasterReaderSpec` (or simply a dictionary) and pass it as the first argument.
+
+### `MultiRasterValueReader`
+
+Expects as the first argument a list of file paths, `RasterReaderSpec`s, or `dict`s. Additional options to be applied to all items can be passed as keyword arguments. Additionally, the following parameters are accepted:
+- `use_multiprocessing`: If `True`, each raster will be processed in a separate process. 
+- `num_threads`: The number of threads to use for parallel reading. By default, this is set to the number of rasters. Set to 0 to read in the main thread.
+
+### `ProcessManager`
+
+A `multiprocessing.BaseManager` with `RasterValueReader` and `MultiRasterValueReader` methods. Can be used to spawn the readers in a separate process.
+
+## PyTorch DataLoaders and parallelism
+Simply using a `RasterValueReader` with a PyTorch DataLoader with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) **will not work**.
 
 Here are examples of usage that do work:
 - Using `multiprocessing.set_start_method("spawn")`. This will create a copy of the reader in each worker process.
 - Setting `preload_all=True` so that the whole raster is loaded into memory.
-- (with multiple rasters) Using `MultiRasterValueReader` as above, but with `use_multiprocessing=True`. This way, each raster wil be read in a separate process.
+- Using `MultiRasterValueReader` as above, but with `use_multiprocessing=True`. This way, each raster wil be read in a separate process.
 - Using `ProcessManager`, e.g.:
 
   ```python
