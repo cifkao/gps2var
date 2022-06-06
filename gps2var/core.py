@@ -449,13 +449,69 @@ class MultiRasterValueReader(RasterValueReaderBase):
         return cls(**kwargs)
 
 
-@contextlib.contextmanager
-def _parallel_map_fn(num_threads):
-    if num_threads:
-        with cf.ThreadPoolExecutor(num_threads) as pool:
-            yield pool.map
-    else:
-        yield map
+class RasterValueReaderPool(RasterValueReaderBase):
+    """A pool of readers reading all in parallel from the same file."""
+
+    def __init__(
+        self,
+        spec: RasterReaderSpecLike,
+        num_workers: int,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+
+        self._exit_stack = contextlib.ExitStack()
+        try:
+
+            def initializer(spec, kwargs):
+                global _WORKER_DATA
+                _WORKER_DATA = {"reader": RasterValueReader(spec=spec, **kwargs)}
+
+            self._pool = self._exit_stack.enter_context(
+                cf.ProcessPoolExecutor(
+                    num_workers, initializer=initializer, initargs=(spec, kwargs)
+                )
+            )
+        except:
+            with self._exit_stack:
+                raise
+
+    def close(self):
+        self._exit_stack.close()
+
+    def async_get(
+        self,
+        x: Union[float, np.ndarray],
+        y: Union[float, np.ndarray],
+        extra: Any = None,
+    ) -> cf.Future:
+        return self._pool.submit(self._worker_get, x, y, extra)
+
+    def get(
+        self,
+        x: Union[float, np.ndarray],
+        y: Union[float, np.ndarray],
+        extra: Any = None,
+    ) -> np.ndarray:
+        return self.async_get(x, y, extra).result()
+
+    @staticmethod
+    def _worker_get(*args):
+        return _WORKER_DATA["reader"].get(*args)
+
+    def async_iget(
+        self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
+    ) -> cf.Future:
+        return self._pool.submit(self._worker_iget, row_indices, col_indices)
+
+    def iget(
+        self, row_indices: Union[int, np.ndarray], col_indices: Union[int, np.ndarray]
+    ) -> np.ndarray:
+        return self.async_iget(row_indices, col_indices).result()
+
+    @staticmethod
+    def _worker_iget(*args):
+        return _WORKER_DATA["reader"].iget(*args)
 
 
 class ZipRasterValueReader(MultiRasterValueReader):
@@ -491,10 +547,23 @@ class ZipRasterValueReader(MultiRasterValueReader):
                 self._zip_file.close()
 
 
+@contextlib.contextmanager
+def _parallel_map_fn(num_threads):
+    if num_threads:
+        with cf.ThreadPoolExecutor(num_threads) as pool:
+            yield pool.map
+    else:
+        yield map
+
+
+_WORKER_DATA = None  # process-local storage for process pools
+
+
 class ProcessManager(BaseManager):
     pass
 
 
 ProcessManager.register("RasterValueReader", RasterValueReader)
 ProcessManager.register("MultiRasterValueReader", MultiRasterValueReader)
+ProcessManager.register("RasterValueReaderPool", RasterValueReaderPool)
 ProcessManager.register("ZipRasterValueReader", ZipRasterValueReader)

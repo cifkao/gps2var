@@ -46,6 +46,11 @@ Can be created with a path to a file that can be read by Rasterio, or an open Ra
 
 Another option is to wrap all these arguments in a `RasterReaderSpec` (or simply a dictionary) and pass it as the first argument.
 
+### `RasterValueReaderPool`
+
+Like `RasterValueReader`, but spawns `num_workers` worker processes that all read from the same file concurrently.
+Besides `get()` (which blocks until the result is ready), it provides `async_get()`, which returns a `concurrent.futures.Future`.
+
 ### `MultiRasterValueReader`
 
 Expects as the first argument a list of file paths, `RasterReaderSpec`s, or `dict`s. Additional options to be applied to all items can be passed as keyword arguments. Additionally, the following parameters are accepted:
@@ -54,10 +59,10 @@ Expects as the first argument a list of file paths, `RasterReaderSpec`s, or `dic
 
 ### `ProcessManager`
 
-A `multiprocessing.BaseManager` with `RasterValueReader` and `MultiRasterValueReader` methods. Can be used to spawn the readers in a separate process.
+A `multiprocessing.BaseManager` with `RasterValueReader`, `MultiRasterValueReader`, and `RasterValueReaderPool` methods that spawn the corresponding reader in a separate process and return a proxy object that can be used in the same way as the reader itself (except that it is not a context manager and stays around until its manager is closed). A nice property of a proxy object is that it can be copied between processes, so it works with PyTorch `DataLoader`.
 
-## PyTorch DataLoaders and parallelism
-Simply using a `RasterValueReader` with a PyTorch DataLoader with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) **will not work**.
+## PyTorch `DataLoader` and parallelism
+Simply using a `RasterValueReader` with a PyTorch `DataLoader` with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) **will not work**.
 
 Here are examples of usage that do work:
 - Using `multiprocessing.set_start_method("spawn")`. This will create a copy of the reader in each worker process.

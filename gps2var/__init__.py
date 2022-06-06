@@ -4,6 +4,7 @@ from .core import (
     RasterValueReaderBase,
     RasterValueReader,
     MultiRasterValueReader,
+    RasterValueReaderPool,
     ZipRasterValueReader,
     ProcessManager,
 )
