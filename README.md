@@ -59,7 +59,7 @@ Expects as the first argument a list of file paths, `RasterReaderSpec`s, or `dic
 
 ### `ProcessManager`
 
-A `multiprocessing.BaseManager` with `RasterValueReader`, `MultiRasterValueReader`, and `RasterValueReaderPool` methods that spawn the corresponding reader in a separate process and return a proxy object that can be used in the same way as the reader itself (except that it is not a context manager and stays around until its manager is closed). A nice property of a proxy object is that it can be copied between processes, so it works with PyTorch `DataLoader`.
+A `multiprocessing.BaseManager` – a context manager that spawns a separate process. It provides `RasterValueReader()`, `MultiRasterValueReader()`, and `RasterValueReaderPool()` methods that create the corresponding reader in that process and return a proxy object that can be used in much the same way as the reader itself. A nice property of a proxy object is that it can be copied between processes without copying the underlying reader, so it works with PyTorch `DataLoader`.
 
 ## PyTorch `DataLoader` and parallelism
 Simply using a `RasterValueReader` with a PyTorch `DataLoader` with `num_workers > 0` and with the `"fork"` [start method](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods) (default on Unix) **will not work**.
