@@ -53,7 +53,7 @@ Besides `get()` (which blocks until the result is ready), it provides `async_get
 
 ### `MultiRasterValueReader`
 
-Expects as the first argument a list of file paths, `RasterReaderSpec`s, or `dict`s. Additional options to be applied to all items can be passed as keyword arguments. Additionally, the following parameters are accepted:
+Expects as the first argument a list of file paths, `RasterReaderSpec`s, or `dict`s, and reads from each file in a separate thread or process. Additional options to be applied to all items can be passed as keyword arguments. Additionally, the following parameters are accepted:
 - `use_multiprocessing`: If `True`, each raster will be processed in a separate process. 
 - `num_threads`: The number of threads to use for parallel reading. By default, this is set to the number of rasters. Set to 0 to read in the main thread.
 
