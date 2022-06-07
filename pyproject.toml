@@ -1,11 +1,30 @@
 [tool.poetry]
 name = "gps2var"
-version = "0.1.0"
-description = ""
+version = "0.1.0-alpha.0"
+description = "Fast reading of geospatial variables by GPS coordinates"
 authors = ["Ondřej Cífka <cifkao@gmail.com>"]
+license = "MIT"
+
+readme = "README.md"
+repository = "https://github.com/cifkao/gps2var"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Utilities",
+    "Intended Audience :: Science/Research"
+]
 
 [tool.poetry.dependencies]
-python = ">=3.7,<3.11"
+python = ">=3.7"
 numpy = "^1.21.5"
 rasterio = "^1.2.10"
 pyproj = "^3.2.1"
