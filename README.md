@@ -84,3 +84,8 @@ Here are examples of usage that do work:
   ```
   
   In this case, the reader is placed in a separate process and the workers connect to it using the proxy object.
+
+## Caveats and limitations
+
+- `gps2var` reads the raster in windows, which is efficient _if the locations requested in a single call tend to be close together_. If this is not the case, better performance can be achieved using `preload_all=True` at the expense of loading the whole raster into memory.
+- By default, the window shape used by `gps2var` is identical to the shape of the blocks in which the dataset is stored. This ensures the windows can be read efficiently, but it might mean reading a lot of data unnecessarily if the block size is large. Adjusting the window shape using the `block_shape` paramater might improve performance.
