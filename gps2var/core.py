@@ -143,7 +143,11 @@ class RasterValueReader(RasterValueReaderBase):
                     )
                 self._feat_scale = np.asarray(self._feat_scale)
 
-            self._block_shape = spec.block_shape or dataset.block_shapes[0]
+            if not spec.preload_all:
+                self._block_shape = spec.block_shape or dataset.block_shapes[0]
+            else:
+                # use one single block since the whole dataset will be loaded anyway
+                self._block_shape = dataset.shape
             self._inv_dataset_transform = ~dataset.transform
             if spec.crs == dataset.crs:
                 self._transformer = None
