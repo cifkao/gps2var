@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "gps2var"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 description = "Fast reading of geospatial variables by GPS coordinates"
 authors = ["Ondřej Cífka <cifkao@gmail.com>"]
 license = "MIT"
