@@ -5,6 +5,8 @@ In particular, it allows parallel calls with coordinates specified as large NumP
 
 Install with: `pip install gps2var`
 
+See [`benchmark.ipynb`](https://github.com/cifkao/gps2var/blob/main/benchmark.ipynb) for a performance benchmark.
+
 ## Examples
 ### Reading from a single file
 ```python
