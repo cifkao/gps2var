@@ -1,4 +1,6 @@
 # gps2var
+[![PyPI Package](https://badge.fury.io/py/gps2var.svg?)](https://pypi.org/project/gps2var/) [![Test Status](https://github.com/cifkao/gps2var/actions/workflows/test.yml/badge.svg)](https://github.com/cifkao/gps2var/actions/workflows/test.yml) [![Lint Status](https://github.com/cifkao/gps2var/actions/workflows/lint.yml/badge.svg)](https://github.com/cifkao/gps2var/actions/workflows/lint.yml)
+
 `gps2var` is a Python library providing fast loading of geospatial variables from raster files by GPS coordinates and with interpolation.
 
 In particular, it allows parallel calls with coordinates specified as large NumPy arrays of arbitrary shapes, and is compatible with PyTorch data loaders.
