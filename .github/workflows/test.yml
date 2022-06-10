@@ -1,0 +1,25 @@
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  notebook:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.7", "3.10"]
+    name: Jupyter notebook test
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies
+        run: |
+          sudo apt-get install libgdal-dev
+          python -m pip install --upgrade pip
+          pip install jupyter nbconvert==6.4.2
+          pip install .
+      - name: Run benchmark
+        run: jupyter nbconvert --to notebook --execute --ExecutePreprocessor.kernel_name=python3 benchmark.ipynb
