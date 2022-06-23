@@ -463,11 +463,12 @@ class MultiRasterValueReader(RasterValueReaderBase):
 
 
 class RasterValueReaderPool(RasterValueReaderBase):
-    """A pool of readers reading all in parallel from the same file."""
+    """A pool of readers reading all in parallel from the same file or list
+    of files."""
 
     def __init__(
         self,
-        spec: RasterReaderSpecLike,
+        spec: Union[RasterReaderSpecLike, List[RasterReaderSpecLike]],
         num_workers: int,
         **kwargs,
     ) -> None:
@@ -478,7 +479,11 @@ class RasterValueReaderPool(RasterValueReaderBase):
 
             def initializer(spec, kwargs):
                 global _WORKER_DATA
-                _WORKER_DATA = {"reader": RasterValueReader(spec=spec, **kwargs)}
+                if isinstance(spec, list):
+                    reader = MultiRasterValueReader(specs=spec, **kwargs)
+                else:
+                    reader = RasterValueReader(spec=spec, **kwargs)
+                _WORKER_DATA = {"reader": reader}
 
             self._pool = self._exit_stack.enter_context(
                 cf.ProcessPoolExecutor(

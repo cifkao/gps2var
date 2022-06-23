@@ -56,7 +56,7 @@ Another option is to wrap all these arguments in a `RasterReaderSpec` (or simply
 
 ### `RasterValueReaderPool`
 
-Like `RasterValueReader`, but spawns `num_workers` worker processes that all read from the same file concurrently.
+Like `RasterValueReader` (or `MultiRasterValueReader`), but spawns `num_workers` worker processes that all read from the same file (or list of files) concurrently.
 Besides `get()` (which blocks until the result is ready), it provides `async_get()`, which returns a `concurrent.futures.Future`.
 
 ### `MultiRasterValueReader`
