@@ -43,6 +43,7 @@ Set `use_multiprocessing=True` to create a separate process for each raster. Thi
 
 Can be created with a path to a file that can be read by Rasterio, or an open Rasterio `DatasetReader`. The behavior can be customized with keyword parameters; the most important ones are:
 - `crs`: The coordinate reference system to use for querying. By default this is EPSG:4326, i.e. longitude and latitude (in this order) as used by GPS.
+- `bands`: The indices (1-based) of the bands (layers) to read from the dataset.
 - `interpolation`: `"nearest"` (default) or `"bilinear"` (slower).
 - `fill_value`: The value (scalar) with which to replace missing values. Defaults to `np.nan`.
 - `feat_dtype`: The dtype to which to convert the result. Defaults to `np.float32`.

@@ -43,6 +43,7 @@ class RasterReaderSpec:
         open_options: Keyword arguments for rasterio.open().
         crs: The coordinate reference system. Defaults to "EPSG:4326", i.e. standard
             GPS coordinates.
+        bands: The indices (1-based) of the bands to read from the dataset.
         interpolation: "nearest" or "bilinear". Defaults to "nearest".
         block_shape: The shape of the blocks read into memory. Defaults to the block
             shape of the first band of the dataset.
@@ -62,6 +63,7 @@ class RasterReaderSpec:
     path: Union[str, os.PathLike, rasterio.path.Path]
     open_options: dict = dataclasses.field(default_factory=dict)
     crs: Any = "EPSG:4326"
+    bands: Optional[List[int]] = None
     interpolation: str = "nearest"
     block_shape: Optional[Tuple[int, int]] = None
     fill_value: Any = np.nan
@@ -121,24 +123,28 @@ class RasterValueReader(RasterValueReaderBase):
                 if spec.preload_all:
                     ctx.enter_context(dataset)
 
+            self._bands = (
+                list(range(1, dataset.count + 1)) if spec.bands is None else spec.bands
+            )
+
             self._feat_center, self._feat_scale = spec.feat_center, spec.feat_scale
 
             if self._feat_center is not None:
                 if not isinstance(self._feat_center, Iterable):
-                    self._feat_center = [self._feat_center] * dataset.count
-                if len(self._feat_center) != dataset.count:
+                    self._feat_center = [self._feat_center] * len(self._bands)
+                if len(self._feat_center) != len(self._bands):
                     raise ValueError(
-                        f"Expected feat_center to have {dataset.count} elements, "
+                        f"Expected feat_center to have {len(self._bands)} elements, "
                         f"got {len(self._feat_center)}"
                     )
                 self._feat_center = np.asarray(self._feat_center)
 
             if self._feat_scale is not None:
                 if not isinstance(self._feat_scale, Iterable):
-                    self._feat_scale = [self._feat_scale] * dataset.count
-                if len(self._feat_scale) != dataset.count:
+                    self._feat_scale = [self._feat_scale] * len(self._bands)
+                if len(self._feat_scale) != len(self._bands):
                     raise ValueError(
-                        f"Expected feat_scale to have {dataset.count} elements, "
+                        f"Expected feat_scale to have {len(self._bands)} elements, "
                         f"got {len(self._feat_scale)}"
                     )
                 self._feat_scale = np.asarray(self._feat_scale)
@@ -156,6 +162,7 @@ class RasterValueReader(RasterValueReaderBase):
                     spec.crs, dataset.crs, always_xy=True
                 )
             self._nodata_array = np.asarray(dataset.nodatavals, dtype=spec.feat_dtype)
+            self._nodata_array = self._nodata_array[np.asarray(self._bands) - 1]
             self._feat_shape = self._nodata_array.shape
             self._nodata_block = np.tile(
                 self._nodata_array, (*self._block_shape, 1)
@@ -165,7 +172,8 @@ class RasterValueReader(RasterValueReaderBase):
             if spec.preload_all:
                 with self._read_lock:
                     self.data = dataset.read(
-                        out_dtype=spec.feat_dtype if spec.early_cast else None
+                        indexes=self._bands,
+                        out_dtype=spec.feat_dtype if spec.early_cast else None,
                     )
             else:
                 self.data = None
@@ -220,6 +228,9 @@ class RasterValueReader(RasterValueReaderBase):
         jj = (np.asarray(j) % 1)[..., None].astype(w_dtype)
         interp_weights = np.stack(
             [(1 - ii) * (1 - jj), (1 - ii) * jj, ii * (1 - jj), ii * jj]
+        )  # shape [4, ..., 1]
+        interp_weights = np.repeat(
+            interp_weights, len(self._bands), axis=-1
         )  # shape [4, ..., num_bands]
         interp_weights[nodata_mask] = 0.0
 
@@ -317,6 +328,7 @@ class RasterValueReader(RasterValueReaderBase):
         else:
             with self._read_lock:
                 data = self.dataset.read(
+                    indexes=self._bands,
                     window=((i0, i1), (j0, j1)),
                     out_dtype=self.spec.feat_dtype if self.spec.early_cast else None,
                 )
