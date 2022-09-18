@@ -10,7 +10,7 @@ from typing import Any, List, Optional, Iterable, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 import pyproj
-import rasterio, rasterio.io, rasterio.path
+import rasterio, rasterio.io
 
 
 class RasterValueReaderBase(abc.ABC):
@@ -60,7 +60,7 @@ class RasterReaderSpec:
             it is read. Defaults to True.
     """
 
-    path: Union[str, os.PathLike, rasterio.path.Path]
+    path: Union[str, os.PathLike]
     open_options: dict = dataclasses.field(default_factory=dict)
     crs: Any = "EPSG:4326"
     bands: Optional[List[int]] = None
@@ -94,9 +94,7 @@ class RasterReaderSpec:
         return cls(path=obj, **kwargs)
 
 
-RasterReaderSpecLike = Union[
-    RasterReaderSpec, dict, str, os.PathLike, rasterio.path.Path
-]
+RasterReaderSpecLike = Union[RasterReaderSpec, dict, str, os.PathLike]
 
 
 class RasterValueReader(RasterValueReaderBase):
